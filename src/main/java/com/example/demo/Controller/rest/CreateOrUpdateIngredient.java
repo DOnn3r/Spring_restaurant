@@ -14,5 +14,6 @@ public class CreateOrUpdateIngredient {
     private int id;
     private String name;
     private Unity unity;
+    private double uniPrice;
 }
 

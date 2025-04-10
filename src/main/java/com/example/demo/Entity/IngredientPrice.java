@@ -3,7 +3,7 @@ package com.example.demo.Entity;
 import java.time.LocalDate;
 
 public class IngredientPrice {
-    private int id;
+    private Integer id;
     private double price;
     private LocalDate date;
     private Ingredient ingredient;
@@ -26,7 +26,7 @@ public class IngredientPrice {
         this.ingredient = ingredient;
     }
 
-    public IngredientPrice(int id, double price, LocalDate date) {
+    public IngredientPrice(Integer id, double price, LocalDate date) {
         this.id = id;
         this.price = price;
         this.date = date;
@@ -36,7 +36,7 @@ public class IngredientPrice {
 
     }
 
-    public int getId() {
+    public Integer getId() {
         return id;
     }
 

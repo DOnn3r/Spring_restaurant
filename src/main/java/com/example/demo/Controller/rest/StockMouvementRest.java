@@ -1,6 +1,7 @@
 package com.example.demo.Controller.rest;
 
 import com.example.demo.Entity.MouvementType;
+import com.example.demo.Entity.Unity;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
@@ -11,6 +12,7 @@ import java.time.LocalDateTime;
 public class StockMouvementRest {
     private int id;
     private Double quantity;
-    private MouvementType type;
-    private LocalDateTime creationDatetime;
+    private MouvementType mouvementType;
+    private LocalDateTime mouvementDate;
+    private Unity unity;
 }

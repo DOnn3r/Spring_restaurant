@@ -13,7 +13,7 @@ public class PriceMapper implements Function<IngredientPrice, PriceRest> {
 
     @Override
     public PriceRest apply(IngredientPrice ingredientPrice) {
-        return new PriceRest(ingredientPrice.getId(), ingredientPrice.getPrice(), ingredientPrice.getDate());
+        return new PriceRest(ingredientPrice.getId(),ingredientPrice.getPrice(), ingredientPrice.getDate());
     }
 
     public PriceRest toRest(IngredientPrice price) {
@@ -26,7 +26,7 @@ public class PriceMapper implements Function<IngredientPrice, PriceRest> {
 
     public IngredientPrice toModel(CreateIngredientPrice dto) {
         IngredientPrice price = new IngredientPrice();
-        // Ne pas setter l'ID ici
+        price.setId(dto.getId());
         price.setPrice(dto.getPrice());
         price.setDate(dto.getDateValue());
         return price;

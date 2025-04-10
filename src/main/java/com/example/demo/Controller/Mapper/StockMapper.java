@@ -13,10 +13,12 @@ public class StockMapper implements Function<StockMouvement, StockMouvementRest>
 
     @Override
     public StockMouvementRest apply(StockMouvement stockMouvement) {
-        return new StockMouvementRest(stockMouvement.getId(),
+        return new StockMouvementRest(
+                stockMouvement.getId(),
                 stockMouvement.getQuantity(),
                 stockMouvement.getMouvementType(),
-                stockMouvement.getMouvementDate());
+                stockMouvement.getMouvementDate(),
+                stockMouvement.getUnity());
     }
 
     public StockMouvementRest toRest(StockMouvement mouvement) {
@@ -24,7 +26,8 @@ public class StockMapper implements Function<StockMouvement, StockMouvementRest>
                 mouvement.getId(),
                 mouvement.getQuantity(),
                 mouvement.getMouvementType(),
-                mouvement.getMouvementDate()
+                mouvement.getMouvementDate(),
+                mouvement.getUnity()
         );
     }
 

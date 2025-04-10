@@ -5,13 +5,12 @@ import com.example.demo.Entity.Ingredient;
 import com.example.demo.Entity.IngredientPrice;
 import org.springframework.stereotype.Repository;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Repository
 public class PriceCrudOperations implements CrudOperation<IngredientPrice> {
@@ -53,40 +52,45 @@ public class PriceCrudOperations implements CrudOperation<IngredientPrice> {
 
     @Override
     public List<IngredientPrice> saveAll(List<IngredientPrice> entities) throws SQLException {
-        List<IngredientPrice> savedPrices = new ArrayList<>();
-        String updateSql = "UPDATE ingredient SET unit_price = ? WHERE id = ?";
-        String insertSql = "INSERT INTO ingredient_price (ingredient_id, price, date) VALUES (?, ?, ?)";
+        // 1. Vérification des IDs existants
+        Set<Integer> existingIds = new HashSet<>();
+        String checkSql = "SELECT id FROM ingredient_price WHERE id = ?";
 
-        try (Connection conn = dataSource.getConnection()) {
-            conn.setAutoCommit(false);
+        // 2. Requête d'insertion
+        String insertSql = "INSERT INTO ingredient_price (id, ingredient_id, price, date) VALUES (?, ?, ?, ?)";
 
-            try (PreparedStatement updateStmt = conn.prepareStatement(updateSql);
-                 PreparedStatement insertStmt = conn.prepareStatement(insertSql)) {
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement checkStmt = connection.prepareStatement(checkSql);
+             PreparedStatement insertStmt = connection.prepareStatement(insertSql)) {
 
-                for (IngredientPrice entity : entities) {
-                    // Update current price in ingredient table
-                    updateStmt.setDouble(1, entity.getPrice());
-                    updateStmt.setInt(2, entity.getIngredient().getId());
-                    updateStmt.addBatch();
+            connection.setAutoCommit(false);
+            List<IngredientPrice> savedPrices = new ArrayList<>();
 
-                    // Insert historical price
-                    insertStmt.setInt(1, entity.getIngredient().getId());
-                    insertStmt.setDouble(2, entity.getPrice());
-                    insertStmt.setDate(3, java.sql.Date.valueOf(LocalDate.now()));
-                    insertStmt.addBatch();
-
-                    savedPrices.add(entity);
+            for (IngredientPrice price : entities) {
+                // Vérification que l'ID n'existe pas déjà
+                checkStmt.setInt(1, price.getId());
+                try (ResultSet rs = checkStmt.executeQuery()) {
+                    if (rs.next()) {
+                        throw new SQLException("L'ID " + price.getId() + " existe déjà");
+                    }
                 }
 
-                updateStmt.executeBatch();
-                insertStmt.executeBatch();
-                conn.commit();
-            } catch (SQLException e) {
-                conn.rollback();
-                throw e;
+                // Insertion
+                insertStmt.setInt(1, price.getId());
+                insertStmt.setInt(2, price.getIngredient().getId());
+                insertStmt.setDouble(3, price.getPrice());
+                insertStmt.setDate(4, Date.valueOf(price.getDate()));
+                insertStmt.addBatch();
+
+                savedPrices.add(price);
             }
+
+            insertStmt.executeBatch();
+            connection.commit();
+            return savedPrices;
+        } catch (SQLException e) {
+            throw e;
         }
-        return savedPrices;
     }
 
     public List<IngredientPrice> findByIdIngredient(long id) throws SQLException {

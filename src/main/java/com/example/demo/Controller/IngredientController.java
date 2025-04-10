@@ -15,7 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -39,7 +39,6 @@ public class IngredientController {
     @PostMapping("/ingredients")
     public ResponseEntity<?> createIngredients(@RequestBody List<CreateOrUpdateIngredient> createDtos) {
         try {
-            // Validation de base
             if (createDtos == null || createDtos.isEmpty()) {
                 return ResponseEntity.badRequest().body("La liste ne peut pas être vide");
             }
@@ -51,11 +50,13 @@ public class IngredientController {
                         ingredient.setName(dto.getName());
                         ingredient.setUnity(dto.getUnity());
                         ingredient.setLastModification(LocalDateTime.now());
+                        ingredient.setUnitPrice(dto.getUniPrice());
                         return ingredient;
                     })
                     .collect(Collectors.toList());
 
             List<Ingredient> savedIngredients = ingredientService.saveAll(newIngredients);
+            log.info("Saved ingredients count: {}", savedIngredients.size());
 
             return ResponseEntity.status(HttpStatus.CREATED)
                     .body(savedIngredients.stream()
@@ -63,11 +64,11 @@ public class IngredientController {
                             .collect(Collectors.toList()));
 
         } catch (DataAccessException e) {
-            log.error("e");
+            log.error("Database error", e); // Log l'exception réelle
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body("Erreur de base de données");
         } catch (Exception e) {
-            log.error("e");
+            log.error("Server error", e); // Log l'exception réelle
             return ResponseEntity.internalServerError()
                     .body("Erreur serveur: " + e.getMessage());
         }
@@ -138,10 +139,10 @@ public class IngredientController {
         }
     }
 
-    @GetMapping("/ingredients/{id}/prices")
-    public ResponseEntity<List<PriceRest>> getIngredientPrices(@PathVariable int id) {
+    @GetMapping("/ingredients/{ingredientId}/prices")
+    public ResponseEntity<List<PriceRest>> getIngredientPrices(@PathVariable int ingredientId) {
         try {
-            List<IngredientPrice> prices = ingredientService.getPricesForIngredient(id);
+            List<IngredientPrice> prices = ingredientService.getPricesForIngredient(ingredientId);
             List<PriceRest> response = prices.stream()
                     .map(price -> new PriceRest(
                             price.getId(),
@@ -155,44 +156,81 @@ public class IngredientController {
         }
     }
 
-    @PutMapping("/{ingredientId}/prices")
-    public ResponseEntity<List<PriceRest>> updateIngredientPrices(
-            @PathVariable int ingredientId,
-            @RequestBody List<CreateIngredientPrice> priceDtos) {
+    @GetMapping("/ingredients/{ingredientId}/stockMovements")
+    public ResponseEntity<List<StockMouvementRest>> getIngredientStock(@PathVariable int ingredientId) {
         try {
-            List<IngredientPrice> prices = priceDtos.stream()
-                    .map(dto -> new IngredientPrice(dto.getPrice(), dto.getDateValue()))
-                    .collect(Collectors.toList());
+            List<StockMouvement> stockMouvements = ingredientService.getStockMouvementForIngredient(ingredientId);
+            List<StockMouvementRest> response = stockMouvements.stream()
+                    .map(m -> new StockMouvementRest(
+                            m.getId(),          // ID manuel bien transmis
+                            m.getQuantity(),
+                            m.getMouvementType(),
+                            m.getMouvementDate(),
+                            m.getUnity()       // Ajout de l'unité
+                    ))
+                    .toList();
 
-            List<IngredientPrice> savedPrices = ingredientService.updatePrices(ingredientId, prices);
-            return ResponseEntity.ok(Collections.singletonList(priceMapper.toRest((IngredientPrice) savedPrices)));
-        } catch (NotFoundException e) {
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
+            log.error("Error getting stock movements", e);
             return ResponseEntity.internalServerError().build();
         }
     }
 
-    @PutMapping("/{ingredientId}/stockMovements")
-    public ResponseEntity<List<StockMouvementRest>> updateIngredientStockMovements(
+    @PutMapping("/ingredients/{ingredientId}/prices")
+    public ResponseEntity<?> updateIngredientPrices(
             @PathVariable int ingredientId,
-            @RequestBody List<CreateStockouvement> movementDtos) {
+            @RequestBody List<CreateIngredientPrice> priceDtos) {
         try {
-            List<StockMouvement> movements = movementDtos.stream()
-                    .map(dto -> new StockMouvement(
-                            ingredientId,
-                            dto.getMouvementType(),
-                            dto.getQuantity(),
-                            dto.getUnity(),
-                            dto.getMouvementDate()))
-                    .collect(Collectors.toList());
+            Ingredient ingredient = ingredientService.findById(ingredientId);
+            if (ingredient == null) {
+                return ResponseEntity.notFound().build();
+            }
 
-            List<StockMouvement> savedMovements = ingredientService.updateStockMovements(ingredientId, movements);
-            return ResponseEntity.ok(Collections.singletonList(stockMapper.toRest((StockMouvement) savedMovements)));
+            List<IngredientPrice> prices = priceDtos.stream()
+                    .map(dto -> {
+                        IngredientPrice price = new IngredientPrice();
+                        price.setId(dto.getId());
+                        price.setPrice(dto.getPrice());
+                        price.setDate(dto.getDateValue());
+                        price.setIngredient(ingredientService.findById(ingredientId)); // Associez l'ingrédient
+                        return price;
+                    })
+                    .collect(Collectors.toList());
+            List<IngredientPrice> savedPrices = ingredientService.updatePrices(ingredientId, prices);
+            return ResponseEntity.ok(priceMapper.toRestList(savedPrices));
         } catch (NotFoundException e) {
             return ResponseEntity.notFound().build();
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().build();
+            return ResponseEntity.internalServerError().body("Error: " + e.getMessage());
+        }
+    }
+
+    @PutMapping("/ingredients/{ingredientId}/stockMovements")
+    public ResponseEntity<?> updateIngredientStockMovements(
+            @PathVariable int ingredientId,
+            @RequestBody List<CreateStockouvement> movementDtos) {
+        try {
+            List<StockMouvement> movements = new ArrayList<>();
+            int tempId = 1; // Compteur temporaire
+
+            for (CreateStockouvement dto : movementDtos) {
+                StockMouvement mouvement = new StockMouvement(
+                        tempId++, // ID manuel temporaire
+                        ingredientId,
+                        dto.getMouvementType(),
+                        dto.getQuantity(),
+                        dto.getUnity(),
+                        dto.getMouvementDate()
+                );
+                movements.add(mouvement);
+            }
+
+            List<StockMouvement> savedMovements = ingredientService.updateStockMovements(ingredientId, movements);
+            return ResponseEntity.ok(stockMapper.toRestList(savedMovements));
+        }
+        catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Error: " + e.getMessage());
         }
     }
 }

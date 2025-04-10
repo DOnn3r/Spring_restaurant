@@ -18,16 +18,14 @@ public class IngredientMapper {
     @Autowired private IngredientService ingredientService;
 
     public IngredientRest toRest(Ingredient ingredient) {
-        if (ingredient == null) {
-            return null;
-        }
+        if (ingredient == null) return null;
 
         return new IngredientRest(
                 ingredient.getId(),
                 ingredient.getName(),
-                toPriceRestList(ingredient.getHistoricalPrices()),
-                Unity.valueOf(String.valueOf(ingredient.getUnity())),
-                toStockMovementRestList(ingredient.getStockMouvements())
+                priceMapper.toRestList(ingredient.getHistoricalPrices()),
+                ingredient.getUnity(),
+                stockMapper.toRestList(ingredient.getStockMouvements())
         );
     }
 

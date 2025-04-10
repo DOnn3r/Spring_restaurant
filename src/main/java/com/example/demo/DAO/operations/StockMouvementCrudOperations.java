@@ -20,7 +20,7 @@ public class StockMouvementCrudOperations implements CrudOperation<StockMouvemen
 
     @Override
     public List<StockMouvement> getAll() throws SQLException {
-        String sql = "SELECT * FROM stock_mouvement";
+        String sql = "SELECT id, ingredient_id, mouvement_type, quantity, unity, mouvement_date FROM stock_mouvement";
         List<StockMouvement> mouvements = new ArrayList<>();
 
         try (Connection connection = dataSource.getConnection();
@@ -37,15 +37,9 @@ public class StockMouvementCrudOperations implements CrudOperation<StockMouvemen
     @Override
     public List<StockMouvement> saveAll(List<StockMouvement> entities) throws SQLException {
         List<StockMouvement> savedMouvements = new ArrayList<>();
-        String sql = "INSERT INTO stock_mouvement (id, id_ingredient, quantity, unit, mouvement_type, mouvement_date) " +
+        String sql = "INSERT INTO stock_mouvement (id, ingredient_id, quantity, unity, mouvement_type, mouvement_date) " +
                 "VALUES (?, ?, ?, ?::unit, ?::mouvement_type, ?) " +
-                "ON CONFLICT (id) DO UPDATE SET " +
-                "id_ingredient = EXCLUDED.id_ingredient, " +
-                "quantity = EXCLUDED.quantity, " +
-                "unit = EXCLUDED.unit, " +
-                "mouvement_type = EXCLUDED.mouvement_type, " +
-                "mouvement_date = EXCLUDED.mouvement_date " +
-                "RETURNING id, id_ingredient, quantity, unit, mouvement_type, mouvement_date";
+                "RETURNING id"; // Important: bien retourner l'ID
 
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -54,7 +48,12 @@ public class StockMouvementCrudOperations implements CrudOperation<StockMouvemen
 
             try {
                 for (StockMouvement mouvement : entities) {
-                    statement.setInt(1, mouvement.getId());
+                    // Vérification que l'ID est bien défini
+                    if (mouvement.getId() <= 0) {
+                        throw new SQLException("ID must be manually set and positive");
+                    }
+
+                    statement.setInt(1, mouvement.getId()); // ID manuel
                     statement.setInt(2, mouvement.getIngredientId());
                     statement.setDouble(3, mouvement.getQuantity());
                     statement.setString(4, mouvement.getUnity().name());
@@ -63,7 +62,8 @@ public class StockMouvementCrudOperations implements CrudOperation<StockMouvemen
 
                     try (ResultSet rs = statement.executeQuery()) {
                         if (rs.next()) {
-                            savedMouvements.add(mapToStockMouvement(rs));
+                            mouvement.setId(rs.getInt("id")); // Confirmation de l'ID
+                            savedMouvements.add(mouvement);
                         }
                     }
                 }
@@ -78,8 +78,8 @@ public class StockMouvementCrudOperations implements CrudOperation<StockMouvemen
 
     public List<StockMouvement> findByIdIngredient(int idIngredient) throws SQLException {
         List<StockMouvement> mouvements = new ArrayList<>();
-        String sql = "SELECT id, id_ingredient, quantity, unit, mouvement_type, mouvement_date " +
-                "FROM stock_mouvement WHERE id_ingredient = ?";
+        String sql = "SELECT id, ingredient_id, mouvement_type, quantity, unity, mouvement_date " +
+                "FROM stock_mouvement WHERE ingredient_id = ?";
 
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
@@ -97,11 +97,11 @@ public class StockMouvementCrudOperations implements CrudOperation<StockMouvemen
 
     private StockMouvement mapToStockMouvement(ResultSet rs) throws SQLException {
         return new StockMouvement(
-                rs.getInt("id"),
-                rs.getInt("id_ingredient"),
+                rs.getInt("id"),               // ID manuel bien récupéré
+                rs.getInt("ingredient_id"),
                 MouvementType.valueOf(rs.getString("mouvement_type")),
                 rs.getDouble("quantity"),
-                Unity.valueOf(rs.getString("unit")),
+                Unity.valueOf(rs.getString("unity")), // Vérifiez bien "unity" et non "unit"
                 rs.getTimestamp("mouvement_date").toLocalDateTime()
         );
     }

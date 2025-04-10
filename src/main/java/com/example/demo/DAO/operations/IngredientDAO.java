@@ -17,8 +17,6 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
     private PriceCrudOperations priceCrudOperations;
     private StockMouvementCrudOperations stockMouvementCrudOperations;
 
-
-
     public IngredientDAO(){
         this.dataSource = new DataSource();
     };
@@ -26,7 +24,12 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
     @Override
     public List<Ingredient> getAll() {
         List<Ingredient> ingredients = new ArrayList<>();
-        String sql = "SELECT id, name, last_modification, unit_price, unity FROM ingredient";
+        String sql = "SELECT i.*, " +
+                "ip.id as price_id, ip.price, ip.date as price_date, " +
+                "sm.id as stock_id, sm.quantity, sm.mouvement_type, sm.mouvement_date " +
+                "FROM ingredient i " +
+                "LEFT JOIN ingredient_price ip ON i.id = ip.ingredient_id " +
+                "LEFT JOIN stock_mouvement sm ON i.id = sm.ingredient_id";
 
         try (Connection connection = dataSource.getConnection();
              PreparedStatement stmt = connection.prepareStatement(sql);
@@ -60,11 +63,18 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
     @Override
     public List<Ingredient> saveAll(List<Ingredient> entities) throws SQLException {
         List<Ingredient> savedIngredients = new ArrayList<>();
+        Connection connection = null;
 
-        try (Connection connection = dataSource.getConnection()) {
+        try {
+            connection = dataSource.getConnection();
             connection.setAutoCommit(false);
 
             for (Ingredient ingredient : entities) {
+                // Validation des données avant insertion
+                if (ingredient.getName() == null) {
+                    throw new IllegalArgumentException("Ingredient name cannot be null for id: " + ingredient.getId());
+                }
+
                 String sql = "INSERT INTO ingredient (id, name, last_modification, unit_price, unity) " +
                         "VALUES (?, ?, ?, ?, ?::unit) " +
                         "ON CONFLICT (id) DO UPDATE SET " +
@@ -90,12 +100,17 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
                     }
                 }
             }
-
-            connection.commit(); // Valide la transaction après tous les inserts
+            connection.commit();
         } catch (SQLException e) {
+            if (connection != null) {
+                connection.rollback(); // Rollback en cas d'erreur
+            }
             throw new SQLException("Erreur lors de l'enregistrement en lot des ingrédients", e);
+        } finally {
+            if (connection != null) {
+                connection.close();
+            }
         }
-
         return savedIngredients;
     }
 

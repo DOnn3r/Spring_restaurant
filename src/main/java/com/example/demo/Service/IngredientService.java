@@ -1,5 +1,8 @@
 package com.example.demo.Service;
 
+import com.example.demo.Controller.IngredientController;
+import com.example.demo.Controller.Mapper.PriceMapper;
+import com.example.demo.Controller.rest.CreateIngredientPrice;
 import com.example.demo.DAO.operations.IngredientDAO;
 import com.example.demo.DAO.operations.PriceCrudOperations;
 import com.example.demo.DAO.operations.StockMouvementCrudOperations;
@@ -9,6 +12,8 @@ import com.example.demo.Entity.MouvementType;
 import com.example.demo.Entity.StockMouvement;
 import com.example.demo.Service.exception.NotFoundException;
 import lombok.AllArgsConstructor;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -21,20 +26,22 @@ import java.util.stream.Collectors;
 
 @Service
 public class IngredientService {
+    private static final Logger log = LogManager.getLogger(IngredientController.class);
     private final IngredientDAO ingredientDAO;
     private final PriceCrudOperations priceCrudOperations;
     private final StockMouvementCrudOperations stockMouvementCrudOperations;
-    private PriceCrudOperations ingredientPrice;
+    private final PriceMapper priceMapper;
 
     @Autowired
     public IngredientService(
             IngredientDAO ingredientDAO,
             PriceCrudOperations priceCrudOperations,
-            StockMouvementCrudOperations stockMouvementCrudOperations
-    ) {
+            StockMouvementCrudOperations stockMouvementCrudOperations,
+            PriceMapper priceMapper) {
         this.ingredientDAO = ingredientDAO;
         this.priceCrudOperations = priceCrudOperations;
         this.stockMouvementCrudOperations = stockMouvementCrudOperations;
+        this.priceMapper = priceMapper;
     }
 
     public List<Ingredient> getAllIngredients() {
@@ -44,7 +51,6 @@ public class IngredientService {
     public Ingredient findById(int id) {
         return  ingredientDAO.findById(id);
     }
-
 
     public List<Ingredient> getFilteredIngredient(Double minPrice) {
         return ingredientDAO.getFilteredIngredient(minPrice);
@@ -59,37 +65,35 @@ public class IngredientService {
     }
 
     public List<IngredientPrice> updatePrices(int ingredientId, List<IngredientPrice> prices) throws SQLException {
-        Ingredient ingredient = ingredientDAO.findById(ingredientId);
-        if (ingredient == null) {
-            throw new NotFoundException("Ingredient not found");
+        // Validation des IDs
+        if (prices.stream().anyMatch(price -> price.getId() <= 0)) {
+            throw new IllegalArgumentException("Tous les prix doivent avoir un ID valide (entier positif)");
         }
-
-        List<IngredientPrice> savedPrices = priceCrudOperations.saveAll(
-                prices.stream()
-                        .peek(price -> price.setIngredient(ingredient))
-                        .collect(Collectors.toList())
-        );
-
-        ingredient.setHistoricalPrices(savedPrices);
-        ingredientDAO.saveOne(ingredient);
-
-        return savedPrices;
+        return priceCrudOperations.saveAll(prices);
     }
 
     public List<StockMouvement> updateStockMovements(int ingredientId, List<StockMouvement> movements) throws SQLException {
+        log.info("Updating {} stock movements for ingredient {}", movements.size(), ingredientId);
+
         Ingredient ingredient = ingredientDAO.findById(ingredientId);
         if (ingredient == null) {
+            log.error("Ingredient {} not found", ingredientId);
             throw new NotFoundException("Ingredient not found");
         }
 
-        // Associe l'ingrédient et sauvegarde
+        log.debug("Original movements: {}", movements);
+
         List<StockMouvement> savedMovements = stockMouvementCrudOperations.saveAll(
                 movements.stream()
-                        .peek(m -> m.setIngredientId(ingredientId))
+                        .peek(m -> {
+                            log.debug("Processing movement: {}", m);
+                            m.setIngredientId(ingredientId);
+                        })
                         .collect(Collectors.toList())
         );
 
-        // Mise à jour de la référence
+        log.info("Saved movements: {}", savedMovements);
+
         ingredient.setStockMouvements(savedMovements);
         ingredientDAO.saveOne(ingredient);
 
@@ -98,9 +102,20 @@ public class IngredientService {
 
     public List<IngredientPrice> getPricesForIngredient(int ingredientId) {
         try {
-            return ingredientPrice.findByIdIngredient(ingredientId);
+            return priceCrudOperations.findByIdIngredient(ingredientId);
         } catch (SQLException e) {
             throw new RuntimeException("Failed to get prices for ingredient: " + ingredientId, e);
+        }
+    }
+
+    public List<StockMouvement> getStockMouvementForIngredient(int ingredientId) {
+        try {
+            List<StockMouvement> mouvements = stockMouvementCrudOperations.findByIdIngredient(ingredientId);
+            log.debug("Retrieved movements: {}", mouvements);
+            return mouvements;
+        } catch (SQLException e) {
+            log.error("Error fetching stock movements for ingredient {}", ingredientId, e);
+            throw new RuntimeException("Failed to get stock movements: " + e.getMessage(), e);
         }
     }
 }
