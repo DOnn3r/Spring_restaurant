@@ -19,6 +19,15 @@ public class StockMouvement {
         this.mouvementDate = mouvementDate;
     }
 
+    public StockMouvement(int ingredientId, MouvementType mouvementType,
+                          double quantity, Unity unity, LocalDateTime mouvementDate) {
+        this.ingredientId = ingredientId;
+        this.mouvementType = mouvementType;
+        this.quantity = quantity;
+        this.unity = unity;
+        this.mouvementDate = mouvementDate;
+    }
+
     public StockMouvement(){};
     public int getId() {
         return id;

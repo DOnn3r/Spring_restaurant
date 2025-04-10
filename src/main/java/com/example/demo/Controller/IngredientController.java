@@ -2,6 +2,7 @@ package com.example.demo.Controller;
 
 import com.example.demo.Controller.Mapper.IngredientMapper;
 import com.example.demo.Controller.Mapper.PriceMapper;
+import com.example.demo.Controller.Mapper.StockMapper;
 import com.example.demo.Controller.rest.*;
 import com.example.demo.Entity.*;
 import com.example.demo.Service.IngredientService;
@@ -14,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -24,12 +26,14 @@ public class IngredientController {
     private final IngredientService ingredientService;
     private final IngredientMapper ingredientMapper;
     private final PriceMapper priceMapper;
+    private final StockMapper stockMapper;
 
     public IngredientController(IngredientService ingredientService,
-                                IngredientMapper ingredientMapper, PriceMapper priceMapper) {
+                                IngredientMapper ingredientMapper, PriceMapper priceMapper, StockMapper stockMapper) {
         this.ingredientService = ingredientService;
         this.ingredientMapper = ingredientMapper;
         this.priceMapper = priceMapper;
+        this.stockMapper = stockMapper;
     }
 
     @PostMapping("/ingredients")
@@ -160,8 +164,8 @@ public class IngredientController {
                     .map(dto -> new IngredientPrice(dto.getPrice(), dto.getDateValue()))
                     .collect(Collectors.toList());
 
-            List<IngredientPrice> savedPrices = ingredientService.addPrice(ingredientId, prices);
-            return ResponseEntity.ok(priceMapper.toRest(savedPrices));
+            List<IngredientPrice> savedPrices = ingredientService.updatePrices(ingredientId, prices);
+            return ResponseEntity.ok(Collections.singletonList(priceMapper.toRest((IngredientPrice) savedPrices)));
         } catch (NotFoundException e) {
             return ResponseEntity.notFound().build();
         } catch (Exception e) {
@@ -183,8 +187,8 @@ public class IngredientController {
                             dto.getMouvementDate()))
                     .collect(Collectors.toList());
 
-            List<StockMouvement> savedMovements = ingredientService.addStockMouvement(ingredientId, movements);
-            return ResponseEntity.ok(stockMapper.toStockMovementRestList(savedMovements));
+            List<StockMouvement> savedMovements = ingredientService.updateStockMovements(ingredientId, movements);
+            return ResponseEntity.ok(Collections.singletonList(stockMapper.toRest((StockMouvement) savedMovements)));
         } catch (NotFoundException e) {
             return ResponseEntity.notFound().build();
         } catch (Exception e) {

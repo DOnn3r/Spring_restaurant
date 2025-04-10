@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class IngredientService {
@@ -57,43 +58,42 @@ public class IngredientService {
         return ingredientDAO.saveAll(ingredients);
     }
 
-    public List<IngredientPrice> addPrice(int ingredientId, List<IngredientPrice> prices) throws SQLException {
+    public List<IngredientPrice> updatePrices(int ingredientId, List<IngredientPrice> prices) throws SQLException {
         Ingredient ingredient = ingredientDAO.findById(ingredientId);
         if (ingredient == null) {
             throw new NotFoundException("Ingredient not found");
         }
 
-        // Supprimer les anciens prix
-        ingredient.getHistoricalPrices().clear();
+        List<IngredientPrice> savedPrices = priceCrudOperations.saveAll(
+                prices.stream()
+                        .peek(price -> price.setIngredient(ingredient))
+                        .collect(Collectors.toList())
+        );
 
-        // Ajouter les nouveaux prix
-        prices.forEach(price -> {
-            price.setIngredient(ingredient);
-            ingredient.getHistoricalPrices().add(price);
-        });
-
+        ingredient.setHistoricalPrices(savedPrices);
         ingredientDAO.saveOne(ingredient);
-        return ingredient.getHistoricalPrices();
+
+        return savedPrices;
     }
 
-    public List<StockMouvement> addStockMouvement(int ingredientId, List<StockMouvement> mouvements) throws SQLException {
+    public List<StockMouvement> updateStockMovements(int ingredientId, List<StockMouvement> movements) throws SQLException {
         Ingredient ingredient = ingredientDAO.findById(ingredientId);
         if (ingredient == null) {
             throw new NotFoundException("Ingredient not found");
         }
 
-        // Supprimer les anciens mouvements
-        ingredient.getStockMouvements().clear();
+        // Associe l'ingrédient et sauvegarde
+        List<StockMouvement> savedMovements = stockMouvementCrudOperations.saveAll(
+                movements.stream()
+                        .peek(m -> m.setIngredientId(ingredientId))
+                        .collect(Collectors.toList())
+        );
 
-        // Ajouter les nouveaux mouvements
-        mouvements.forEach(movement -> {
-            movement.setIngredientId(ingredientId);
-            ingredient.getStockMouvements().add(movement);
-        });
-
+        // Mise à jour de la référence
+        ingredient.setStockMouvements(savedMovements);
         ingredientDAO.saveOne(ingredient);
-        return ingredient.getStockMouvements();
 
+        return savedMovements;
     }
 
     public List<IngredientPrice> getPricesForIngredient(int ingredientId) {
