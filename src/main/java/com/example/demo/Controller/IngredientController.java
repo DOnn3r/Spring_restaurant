@@ -49,7 +49,6 @@ public class IngredientController {
                         ingredient.setId(dto.getId());
                         ingredient.setName(dto.getName());
                         ingredient.setUnity(dto.getUnity());
-                        ingredient.setLastModification(LocalDateTime.now());
                         ingredient.setUnitPrice(dto.getUniPrice());
                         return ingredient;
                     })

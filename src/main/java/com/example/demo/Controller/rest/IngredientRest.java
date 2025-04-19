@@ -14,4 +14,5 @@ public class IngredientRest {
     private List<PriceRest> prices;
     private Unity unity;
     private List<StockMouvementRest> stocks;
+    private Double availableQuantity;
 }

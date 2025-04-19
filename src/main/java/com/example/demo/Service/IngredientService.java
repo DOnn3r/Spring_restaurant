@@ -3,6 +3,7 @@ package com.example.demo.Service;
 import com.example.demo.Controller.IngredientController;
 import com.example.demo.Controller.Mapper.PriceMapper;
 import com.example.demo.Controller.rest.CreateIngredientPrice;
+import com.example.demo.DAO.DataSource;
 import com.example.demo.DAO.operations.IngredientDAO;
 import com.example.demo.DAO.operations.PriceCrudOperations;
 import com.example.demo.DAO.operations.StockMouvementCrudOperations;
@@ -17,7 +18,7 @@ import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.sql.SQLException;
+import java.sql.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -26,6 +27,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class IngredientService {
+    private DataSource dataSource = new DataSource();
     private static final Logger log = LogManager.getLogger(IngredientController.class);
     private final IngredientDAO ingredientDAO;
     private final PriceCrudOperations priceCrudOperations;
@@ -65,11 +67,41 @@ public class IngredientService {
     }
 
     public List<IngredientPrice> updatePrices(int ingredientId, List<IngredientPrice> prices) throws SQLException {
-        // Validation des IDs
-        if (prices.stream().anyMatch(price -> price.getId() <= 0)) {
-            throw new IllegalArgumentException("Tous les prix doivent avoir un ID valide (entier positif)");
+        // 1. Supprimer les anciens prix
+        String deleteSql = "DELETE FROM ingredient_price WHERE ingredient_id = ?";
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement deleteStmt = connection.prepareStatement(deleteSql)) {
+            deleteStmt.setInt(1, ingredientId);
+            deleteStmt.executeUpdate();
         }
-        return priceCrudOperations.saveAll(prices);
+
+        // 2. Ajouter les nouveaux prix
+        String insertSql = "INSERT INTO ingredient_price (ingredient_id, price, date) VALUES (?, ?, ?)";
+        List<IngredientPrice> savedPrices = new ArrayList<>();
+
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement insertStmt = connection.prepareStatement(insertSql, Statement.RETURN_GENERATED_KEYS)) {
+
+            for (IngredientPrice price : prices) {
+                insertStmt.setInt(1, ingredientId);
+                insertStmt.setDouble(2, price.getPrice());
+                insertStmt.setDate(3, Date.valueOf(price.getDate()));
+                insertStmt.addBatch();
+            }
+
+            insertStmt.executeBatch();
+
+            try (ResultSet rs = insertStmt.getGeneratedKeys()) {
+                int i = 0;
+                while (rs.next()) {
+                    prices.get(i).setId(rs.getInt(1));
+                    savedPrices.add(prices.get(i));
+                    i++;
+                }
+            }
+        }
+
+        return savedPrices;
     }
 
     public List<StockMouvement> updateStockMovements(int ingredientId, List<StockMouvement> movements) throws SQLException {
@@ -117,5 +149,9 @@ public class IngredientService {
             log.error("Error fetching stock movements for ingredient {}", ingredientId, e);
             throw new RuntimeException("Failed to get stock movements: " + e.getMessage(), e);
         }
+    }
+
+    public double getCurrentStock(int ingredientId) throws SQLException {
+        return ingredientDAO.getCurrentStock(ingredientId);
     }
 }

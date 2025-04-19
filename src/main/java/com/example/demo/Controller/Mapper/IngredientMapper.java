@@ -25,7 +25,8 @@ public class IngredientMapper {
                 ingredient.getName(),
                 priceMapper.toRestList(ingredient.getHistoricalPrices()),
                 ingredient.getUnity(),
-                stockMapper.toRestList(ingredient.getStockMouvements())
+                stockMapper.toRestList(ingredient.getStockMouvements()),
+                ingredient.getAvalaibleQuantity()
         );
     }
 

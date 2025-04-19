@@ -23,34 +23,23 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
 
     @Override
     public List<Ingredient> getAll() {
+        // Requête séparée pour les ingrédients de base
+        String ingredientSql = "SELECT id, name, last_modification, unit_price, unity FROM ingredient";
         List<Ingredient> ingredients = new ArrayList<>();
-        String sql = "SELECT i.*, " +
-                "ip.id as price_id, ip.price, ip.date as price_date, " +
-                "sm.id as stock_id, sm.quantity, sm.mouvement_type, sm.mouvement_date " +
-                "FROM ingredient i " +
-                "LEFT JOIN ingredient_price ip ON i.id = ip.ingredient_id " +
-                "LEFT JOIN stock_mouvement sm ON i.id = sm.ingredient_id";
 
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement stmt = connection.prepareStatement(sql);
+             PreparedStatement stmt = connection.prepareStatement(ingredientSql);
              ResultSet rs = stmt.executeQuery()) {
 
             while (rs.next()) {
                 Ingredient ingredient = new Ingredient();
                 ingredient.setId(rs.getInt("id"));
                 ingredient.setName(rs.getString("name"));
+                // ... autres champs de base ...
 
-                Timestamp timestamp = rs.getTimestamp("last_modification");
-                if (timestamp != null) {
-                    ingredient.setLastModification(timestamp.toLocalDateTime());
-                }
-
-                ingredient.setUnitPrice(rs.getDouble("unit_price"));
-
-                String unityStr = rs.getString("unity");
-                if (unityStr != null) {
-                    ingredient.setUnity(Unity.valueOf(unityStr));
-                }
+                // Chargez les prix et stocks séparément
+                ingredient.setHistoricalPrices(loadHistoricalPrices(connection, ingredient.getId()));
+                ingredient.setStockMouvements(loadStockMovements(connection, ingredient.getId()));
 
                 ingredients.add(ingredient);
             }
@@ -58,6 +47,48 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
         } catch (SQLException e) {
             throw new RuntimeException("Failed to fetch ingredients", e);
         }
+    }
+
+    private List<IngredientPrice> loadHistoricalPrices(Connection connection, int ingredientId) throws SQLException {
+        String sql = "SELECT * FROM ingredient_price WHERE ingredient_id = ? ORDER BY date DESC";
+        List<IngredientPrice> prices = new ArrayList<>();
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setInt(1, ingredientId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    prices.add(new IngredientPrice(
+                            rs.getInt("id"),
+                            rs.getDouble("price"),
+                            rs.getDate("date").toLocalDate(),
+                            new Ingredient(ingredientId) // Juste une référence avec l'ID
+                    ));
+                }
+            }
+        }
+        return prices;
+    }
+
+    private List<StockMouvement> loadStockMovements(Connection connection, int ingredientId) throws SQLException {
+        String sql = "SELECT * FROM stock_mouvement WHERE ingredient_id = ? ORDER BY mouvement_date DESC";
+        List<StockMouvement> movements = new ArrayList<>();
+
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setInt(1, ingredientId);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    movements.add(new StockMouvement(
+                            rs.getInt("id"),
+                            rs.getInt("ingredient_id"),
+                            MouvementType.valueOf(rs.getString("mouvement_type")),
+                            rs.getDouble("quantity"),
+                            Unity.valueOf(rs.getString("unity")),
+                            rs.getTimestamp("mouvement_date").toLocalDateTime()
+                    ));
+                }
+            }
+        }
+        return movements;
     }
 
     @Override
@@ -87,7 +118,6 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
                 try (PreparedStatement statement = connection.prepareStatement(sql)) {
                     statement.setInt(1, ingredient.getId());
                     statement.setString(2, ingredient.getName());
-                    statement.setTimestamp(3, Timestamp.valueOf(ingredient.getLastModification()));
                     statement.setDouble(4, ingredient.getUnitPrice());
                     statement.setObject(5, ingredient.getUnity() != null ?
                             ingredient.getUnity().name() : null, Types.OTHER);
@@ -130,7 +160,6 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
 
             statement.setInt(1, ingredient.getId());
             statement.setString(2, ingredient.getName());
-            statement.setTimestamp(3, Timestamp.valueOf(ingredient.getLastModification()));
             statement.setDouble(4, ingredient.getUnitPrice());
             statement.setObject(5, ingredient.getUnity() != null ?
                     ingredient.getUnity().name() : null, Types.OTHER);
@@ -152,49 +181,34 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
     }
 
     public Ingredient findById(int id) {
-        String sql = "SELECT id, name, last_modification, unit_price, unity FROM ingredient WHERE id = ?";
+        String sql = "SELECT i.id, i.name, i.last_modification, i.unit_price, i.unity, "
+                + "(SELECT SUM(sm.quantity) FROM stock_mouvement sm WHERE sm.ingredient_id = i.id) AS current_stock "
+                + "FROM ingredient i WHERE i.id = ?";
+
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
+
             statement.setInt(1, id);
+
             try (ResultSet resultSet = statement.executeQuery()) {
                 if (resultSet.next()) {
-                    Ingredient ingredient = new Ingredient(
-                            resultSet.getInt("id"),
-                            resultSet.getString("name"),
-                            resultSet.getTimestamp("last_modification").toLocalDateTime(),
-                            resultSet.getDouble("unit_price"),
-                            Unity.valueOf(resultSet.getString("unity"))
-                    );
+                    Ingredient ingredient = new Ingredient();
+                    ingredient.setId(resultSet.getInt("id"));
+                    ingredient.setName(resultSet.getString("name"));
+                    ingredient.setUnitPrice(resultSet.getDouble("unit_price"));
+                    ingredient.setUnity(Unity.valueOf(resultSet.getString("unity")));
+                    ingredient.setHistoricalPrices(loadHistoricalPrices(connection, ingredient.getId()));
+                    ingredient.setStockMouvements(loadStockMovements(connection, ingredient.getId()));
+                    ingredient.getAvalaibleQuantity();
 
                     return ingredient;
                 }
             }
         } catch (SQLException e) {
-            throw new RuntimeException("Erreur lors de la recherche de l'ingrédient par nom", e);
+            throw new RuntimeException("Erreur lors de la recherche de l'ingrédient par ID: " + id, e);
         }
-        return null;
+        throw new RuntimeException("Ingrédient non trouvé avec l'ID: " + id);
     }
-
-    private List<IngredientPrice> loadHistoricalPrices(Connection connection, int ingredientId) throws SQLException {
-        String sql = "SELECT * FROM ingredient_price WHERE ingredient_id = ? ORDER BY date ASC";
-        List<IngredientPrice> historicalPrices = new ArrayList<>();
-
-        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setInt(1, ingredientId);
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    historicalPrices.add(new IngredientPrice(
-                            rs.getInt("id"),
-                            rs.getDouble("price"),
-                            rs.getDate("date").toLocalDate()
-                    ));
-                }
-            }
-        }
-
-        return historicalPrices;
-    }
-
 
     public List<Ingredient> getFilteredIngredientByPrice(double minPrice, double maxPrice) {
         String sql = "select i.id, i.name, i.last_modification, i.unit_price, i.unity from ingredient i where i.unit_price between ? and ?";
@@ -212,7 +226,6 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
                     ingredient.setId(resultSet.getInt("id"));
                     ingredient.setName(resultSet.getString("name"));
                     ingredient.setUnitPrice(resultSet.getDouble("unit_price"));
-                    ingredient.setLastModification(resultSet.getTimestamp("last_modification").toLocalDateTime());
                     ingredient.setUnity(Unity.valueOf(resultSet.getString("unity")));
                     ingredients.add(ingredient);
                 }
@@ -235,7 +248,6 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
                     ingredient.setId(resultSet.getInt("id"));
                     ingredient.setName(resultSet.getString("name"));
                     ingredient.setUnitPrice(resultSet.getDouble("unit_price"));
-                    ingredient.setLastModification(resultSet.getTimestamp("last_modification").toLocalDateTime());
                     ingredient.setUnity(Unity.valueOf(resultSet.getString("unity")));
                     ingredients.add(ingredient);
                 }
@@ -259,7 +271,6 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
                 Ingredient ingredient = new Ingredient();
                 ingredient.setId(rs.getInt("id"));
                 ingredient.setName(rs.getString("name"));
-                ingredient.setLastModification(rs.getTimestamp("last_modification").toLocalDateTime());
                 ingredient.setUnitPrice(rs.getDouble("unit_price"));
                 ingredient.setUnity(Unity.valueOf(rs.getString("unity")));
                 ingredients.add(ingredient);
@@ -268,5 +279,28 @@ public class IngredientDAO implements CrudOperation<Ingredient> {
             throw new RuntimeException("Failed to fetch basic ingredients", e);
         }
         return ingredients;
+    }
+
+    public double getCurrentStock(int ingredientId) {
+        String sql = "SELECT COALESCE(SUM(quantity), 0) AS current_stock " +
+                "FROM stock_mouvement " +
+                "WHERE ingredient_id = ?";
+
+        try (Connection connection = dataSource.getConnection();
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setInt(1, ingredientId);
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) {
+                    return resultSet.getDouble("current_stock");
+                }
+            }
+
+            return 0; // Retourne 0 si aucun mouvement de stock trouvé
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Erreur lors du calcul du stock actuel pour l'ingrédient " + ingredientId, e);
+        }
     }
 }
